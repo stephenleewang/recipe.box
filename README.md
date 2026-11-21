@@ -51,7 +51,10 @@ app tells you "Link import isn't set up on this deploy yet." Use Option 1 or 2 i
   Tap **Back up recipes** at the bottom of the home screen now and then and save the file
   to iCloud Drive. **Restore a backup** loads it on another device or after a reset.
 - **Link import** works on most recipe sites (it reads the recipe data those sites publish
-  for Google). Some big publishers block it; use **Type it in** for those.
+  for Google). Some sites block it. For those, use the **Copy recipe** bookmark:
+  in the app tap **+ Add → Paste → Set up the bookmark** for the steps. Then on any recipe
+  page in Safari, tap the bookmark and paste into the Paste tab. Pasting plain recipe text
+  (with Ingredients and Instructions headings) works too.
 - **Updating the app:** after editing `index.html`, change `VERSION` in `sw.js`
   (for example `recipe-box-v2`) so phones pick up the new version.
 - `seed.json` is only read the first time. Editing it later won't overwrite recipes already on your phone.

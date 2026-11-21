@@ -105,7 +105,43 @@ async function imageData(url, base) {
 const UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
+// Turn a schema.org Recipe object into the app's shape.
+async function normalize(recipe, pageUrl, site) {
+  const catText = [...list(recipe.recipeCategory), ...list(recipe.keywords)].join(' ');
+  const categories = [...new Set(CATS.filter(([rx]) => rx.test(catText)).map(([, c]) => c))].slice(0, 2);
+  const cuisine = decode(list(recipe.recipeCuisine)[0] || '');
+  const prep = minutes(recipe.prepTime);
+  const cook = minutes(recipe.cookTime);
+  const img = imageUrl(recipe.image);
+  let host = '';
+  try { host = new URL(pageUrl).hostname.replace(/^www\./, ''); } catch {}
+  return {
+    title: decode(recipe.name),
+    servings: firstNumber(recipe.recipeYield),
+    prep,
+    cook,
+    total: minutes(recipe.totalTime) || prep + cook,
+    ingredients: list(recipe.recipeIngredient).map(decode).filter(Boolean),
+    steps: steps(recipe.recipeInstructions),
+    sourceName: decode(site) || decode(list(recipe.publisher)[0]?.name) || host,
+    categories,
+    cuisine: cuisine.length < 30 ? cuisine : '',
+    image: img && pageUrl ? await imageData(img, pageUrl) : '',
+  };
+}
+
 export default async (req) => {
+  // POST: recipe data the user copied from a page in their own browser (the "Copy recipe" bookmark)
+  if (req.method === 'POST') {
+    let body;
+    try { body = await req.json(); } catch { return json({ error: 'badjson' }, 400); }
+    const recipe = findRecipe(body && body.recipe);
+    if (!recipe) return json({ error: 'norecipe' }, 422);
+    let pageUrl = '';
+    try { pageUrl = new URL(body.url).href; } catch {}
+    return json(await normalize(recipe, pageUrl, body.site || ''));
+  }
+
   const target = new URL(req.url).searchParams.get('url') || '';
   let page;
   try {
@@ -141,32 +177,8 @@ export default async (req) => {
   }
   if (!recipe) return json({ error: 'norecipe' }, 422);
 
-  const site =
-    decode(html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)/i)?.[1]) ||
-    decode(list(recipe.publisher)[0]?.name) ||
-    page.hostname.replace(/^www\./, '');
-
-  const catText = [...list(recipe.recipeCategory), ...list(recipe.keywords)].join(' ');
-  const categories = [...new Set(CATS.filter(([rx]) => rx.test(catText)).map(([, c]) => c))].slice(0, 2);
-  const cuisine = decode(list(recipe.recipeCuisine)[0] || '');
-
-  const prep = minutes(recipe.prepTime);
-  const cook = minutes(recipe.cookTime);
-  const img = imageUrl(recipe.image);
-
-  return json({
-    title: decode(recipe.name),
-    servings: firstNumber(recipe.recipeYield),
-    prep,
-    cook,
-    total: minutes(recipe.totalTime) || prep + cook,
-    ingredients: list(recipe.recipeIngredient).map(decode).filter(Boolean),
-    steps: steps(recipe.recipeInstructions),
-    sourceName: site,
-    categories,
-    cuisine: cuisine.length < 30 ? cuisine : '',
-    image: img ? await imageData(img, page.href) : '',
-  });
+  const site = html.match(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)/i)?.[1] || '';
+  return json(await normalize(recipe, page.href, site));
 };
 
 export const config = { path: '/api/recipe' };

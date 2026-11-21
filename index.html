@@ -405,16 +405,41 @@ let imp={tab:'link',files:[]};
 function addSheet(){
   imp={tab:'link',files:[]};drawAdd();
 }
-function drawAdd(){
+const BOOKMARKLET="javascript:(()=>{let r=null;const f=n=>{if(!n||typeof n!=='object')return null;if(Array.isArray(n)){for(const x of n){const y=f(x);if(y)return y}return null}if([].concat(n['@type']||[]).join(' ').match(/Recipe/))return n;return f(n['@graph'])||f(n.mainEntity)};document.querySelectorAll('script[type=\"application/ld+json\"]').forEach(s=>{if(!r)try{r=f(JSON.parse(s.textContent))}catch(e){}});if(!r){alert('No recipe data found on this page.');return}const m=document.querySelector('meta[property=\"og:site_name\"]');const j=JSON.stringify({recipeBox:1,url:location.href,site:m?m.content:location.hostname,recipe:r});const done=()=>alert('Recipe copied. Open Recipe Box, tap + Add, then Paste.');const fb=()=>{const t=document.createElement('textarea');t.value=j;document.body.appendChild(t);t.select();try{document.execCommand('copy');done()}catch(e){prompt('Copy this:',j)}t.remove()};navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(j).then(done,fb):fb()})()";
+function drawAdd(msg){
   const t=imp.tab;
   open(`<h2>Add a recipe</h2>
-  <div class="tabs"><button data-tab="link" aria-pressed="${t==='link'}">From a link</button><button data-tab="type" aria-pressed="${t==='type'}">Type it in</button></div>
-  ${t==='link'?`<form id="iform"><label class="fld"><span>Recipe link</span><input type="url" id="iu" placeholder="https://…" inputmode="url" autocomplete="off"><small>Works with most recipe sites. A few big publishers block it; use Type it in for those.</small></label></form>`:'<p class="note">Start with a blank card and fill in what you know.</p>'}
-  <div class="sbar"><button class="btn b-ghost" data-act="close">Cancel</button>${t==='type'?'<button class="btn b-main" data-act="blank">Start</button>':'<button class="btn b-main" id="go">Import</button>'}</div>`);
-  const g=$('#go');if(g){g.onclick=doImport;$('#iform').onsubmit=e=>{e.preventDefault();doImport()}}
+  <div class="tabs"><button data-tab="link" aria-pressed="${t==='link'}">Link</button><button data-tab="paste" aria-pressed="${t==='paste'}">Paste</button><button data-tab="type" aria-pressed="${t==='type'}">Type it in</button></div>
+  ${msg?`<p class="note" style="color:var(--tomt)">${esc(msg)}</p>`:''}
+  ${t==='link'?`<form id="iform"><label class="fld"><span>Recipe link</span><input type="url" id="iu" placeholder="https://…" inputmode="url" autocomplete="off" value="${esc(imp.url||'')}"><small>Works with most recipe sites. If a site blocks it, use Paste.</small></label></form>`:''}
+  ${t==='paste'?`<label class="fld"><span>Paste the recipe</span><textarea id="it" style="min-height:180px" placeholder="Paste here after tapping your Copy recipe bookmark, or paste the recipe text itself."></textarea></label>
+   <p class="note">Fastest way: on the recipe page in Safari, tap your <b>Copy recipe</b> bookmark, then paste here. <button class="btn b-ghost" style="height:36px;margin-top:6px" data-act="bm">Set up the bookmark</button></p>`:''}
+  ${t==='type'?'<p class="note">Start with a blank card and fill in what you know.</p>':''}
+  <div class="sbar"><button class="btn b-ghost" data-act="close">Cancel</button>${t==='type'?'<button class="btn b-main" data-act="blank">Start</button>':`<button class="btn b-main" id="go">${t==='paste'?'Add':'Import'}</button>`}</div>`);
+  const g=$('#go');if(!g)return;
+  g.onclick=t==='paste'?doPaste:doImport;
+  const f=$('#iform');if(f)f.onsubmit=e=>{e.preventDefault();doImport()};
+}
+function bmSheet(){
+  open(`<h2>One-tap Copy recipe bookmark</h2>
+  <p class="note">Some sites block apps from reading them. This bookmark reads the recipe from the page you're already looking at, so it works anywhere.</p>
+  <ol style="padding-left:20px;margin:0 0 14px">
+   <li>Tap <b>Copy code</b> below.</li>
+   <li>In Safari, open any page, tap Share, then <b>Add Bookmark</b>. Name it <b>Copy recipe</b> and save.</li>
+   <li>Open your bookmarks, tap Edit, tap <b>Copy recipe</b>, and replace its address with the code you copied.</li>
+   <li>On any recipe page: open bookmarks, tap <b>Copy recipe</b>, then come back here and Paste.</li>
+  </ol>
+  <textarea readonly style="min-height:90px;font-size:12px">${esc(BOOKMARKLET)}</textarea>
+  <div class="sbar"><button class="btn b-ghost" data-act="close">Done</button><button class="btn b-main" id="bmc">Copy code</button></div>`);
+  $('#bmc').onclick=()=>{try{navigator.clipboard.writeText(BOOKMARKLET).then(()=>toast('Code copied'),()=>toast('Select the code and copy it'))}catch(e){toast('Select the code and copy it')}};
+}
+async function openImported(j,u){
+  let photos=[];
+  if(j.image){try{const b=await (await fetch(j.image)).blob();photos=[{src:await toDataURL(await shrink(b,1200))}]}catch(e){}}
+  close();editor({id:null,title:j.title,source:u||'',sourceName:j.sourceName||(u?host(u):''),servings:j.servings||'',prep:j.prep||'',cook:j.cook||'',total:j.total||'',ings:(j.ingredients||[]).map(parseIng).filter(Boolean),steps:j.steps||[],tags:[],cats:(j.categories||[]).filter(c=>CATS.includes(c)),cuisine:j.cuisine||'',photos},true);
 }
 async function doImport(){
-  const g=$('#go'),u=($('#iu').value||'').trim();
+  const g=$('#go'),u=($('#iu').value||'').trim();imp.url=u;
   if(!/^https?:\/\//i.test(u)){toast('Paste a full link starting with http');return}
   if(!navigator.onLine){toast("You're offline. Importing needs a connection.");return}
   g.disabled=true;g.innerHTML='<span class="spin"></span> Reading…';
@@ -422,14 +447,45 @@ async function doImport(){
     const res=await fetch('/api/recipe?url='+encodeURIComponent(u));
     const j=await res.json().catch(()=>({error:res.status===404?'nofn':'fail'}));
     if(!res.ok||!j.title)throw new Error(j.error||'fail');
-    let photos=[];
-    if(j.image){try{const b=await (await fetch(j.image)).blob();photos=[{src:await toDataURL(await shrink(b,1200))}]}catch(e){}}
-    close();editor({id:null,title:j.title,source:u,sourceName:j.sourceName||host(u),servings:j.servings||'',prep:j.prep||'',cook:j.cook||'',total:j.total||'',ings:(j.ingredients||[]).map(parseIng).filter(Boolean),steps:j.steps||[],tags:[],cats:(j.categories||[]).filter(c=>CATS.includes(c)),cuisine:j.cuisine||'',photos},true);
+    await openImported(j,u);
   }catch(e){
     const m=e.message;
-    toast(m==='blocked'?'That site blocks importing. Try Type it in.':m==='norecipe'?"Couldn't find a recipe on that page.":m==='nofn'?'Link import isn\'t set up on this deploy yet. See the README.':"Couldn't read that link. Try again or Type it in.");
+    if(m==='blocked'){imp.tab='paste';drawAdd("That site blocks link imports. Use your Copy recipe bookmark on the page, then paste here.");return}
+    toast(m==='norecipe'?"Couldn't find a recipe on that page. Try Paste.":m==='nofn'?"Link import isn't set up on this deploy yet. See the README.":"Couldn't read that link. Try Paste.");
     g.disabled=false;g.textContent='Import';
   }
+}
+function parseText(txt){
+  const lines=txt.split(/\r?\n/).map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const find=(re,from)=>{for(let i=from||0;i<lines.length;i++)if(re.test(lines[i]))return i;return -1};
+  const iI=find(/^ingredients\b/i);if(iI<0)return null;
+  const iS=find(/^(instructions|directions|method|steps|preparation)\b/i,iI+1);if(iS<0)return null;
+  const iE=find(/^(notes?|recipe notes|nutrition|video|tips|equipment|did you make)\b/i,iS+1);
+  const title=lines.slice(0,iI).find(l=>l.length>3&&l.length<90&&!/^(jump|print|save|pin|rate|prep|cook|total|servings|serves|yield|course|cuisine|author|calories)/i.test(l))||'Pasted recipe';
+  const ings=lines.slice(iI+1,iS).map(l=>l.replace(/^[▢□•\-*]\s*/,'')).filter(l=>l&&l.length<160);
+  const steps=lines.slice(iS+1,iE>0?iE:undefined).map(l=>l.replace(/^(step\s*)?\d+[.):]?\s+/i,'')).filter(l=>l.length>8);
+  const time=re=>{const m=txt.match(re);if(!m)return 0;const h=/(\d+)\s*h/i.exec(m[1]),mi=/(\d+)\s*m/i.exec(m[1]);return(h?+h[1]*60:0)+(mi?+mi[1]:0)};
+  return{title,servings:+((txt.match(/(?:servings|serves|yield)\s*:?\s*(\d+)/i)||[])[1])||'',prep:time(/prep(?:\s*time)?\s*:?\s*((?:\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m)\s*)+)/i),cook:time(/cook(?:\s*time)?\s*:?\s*((?:\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m)\s*)+)/i),total:time(/total(?:\s*time)?\s*:?\s*((?:\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m)\s*)+)/i),ingredients:ings,steps};
+}
+async function doPaste(){
+  const g=$('#go'),txt=($('#it').value||'').trim();
+  if(!txt){toast('Paste something first');return}
+  let data=null;try{data=JSON.parse(txt)}catch(e){}
+  if(data&&typeof data==='object'){
+    if(!navigator.onLine){toast("You're offline. This needs a connection.");return}
+    const body=data.recipeBox?data:{recipe:data};
+    g.disabled=true;g.innerHTML='<span class="spin"></span> Reading…';
+    try{
+      const res=await fetch('/api/recipe',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok||!j.title)throw new Error(j.error||'fail');
+      return openImported(j,body.url||'');
+    }catch(e){toast(e.message==='norecipe'?"That doesn't look like a recipe.":"Couldn't read that. Try again.");g.disabled=false;g.textContent='Add';return}
+  }
+  const p=parseText(txt);
+  if(!p||(!p.ingredients.length&&!p.steps.length)){toast("Couldn't find Ingredients and Instructions in that text");return}
+  const u=(txt.match(/https?:\/\/\S+/)||[])[0]||'';
+  openImported(p,u);
 }
 
 /* ---------- editor ---------- */
@@ -549,6 +605,7 @@ document.addEventListener('click',e=>{
   if(a==='cover'){phMode='cover';$('#phIn').multiple=false;return $('#phIn').click()}
   if(a==='add')return addSheet();
   if(a==='blank'){close();return editor({},false)}
+  if(a==='bm')return bmSheet();
   if(a==='backup')return backup();
   if(a==='restore')return $('#rsIn').click();
   if(t.dataset.step!=null&&!t.closest('#cook'))return cookOpen(+t.dataset.step);
