@@ -344,7 +344,7 @@ function splitItem(t){
   let name=rest.toLowerCase().replace(/\(.*?\)/g,' ').split(',')[0].replace(/\b(to taste|for garnish|for serving|to serve|for frying|for deep frying)\b.*$/,'').replace(DESC,' ').replace(/\s+/g,' ').trim();
   const tm=name.match(/\s(cloves?|stalks?|sprigs?|bunch(?:es)?|heads?)$/);if(tm&&q!=null&&!unit){unit=UMAP[tm[1]];name=name.slice(0,tm.index).trim()}
   name=name.replace(/^toppings?:\s*/,'').replace(/^(small |large |big )?(handful|pinch|dash|splash) (of )?/,'').replace(/^[^a-z0-9]+/,'').replace(/^(of|a|an)\s+/,'').trim();
-  return{q,unit,key:singular(name||rest.toLowerCase())};
+  const nm=name||rest.toLowerCase();return{q,unit,key:singular(nm),label:nm};
 }
 const AISLES=[
   ['Frozen',/\bfrozen\b/],
@@ -371,16 +371,58 @@ function amountText(g){
   if(g.count)parts.push(fmt(g.count));
   return parts.join(' + ');
 }
-function shopGroups(){
-  const map={};
-  for(const x of SHOP.items||[]){
-    const s=splitItem(x.t),k=s.key;if(!k||(x.r&&/^(cold |warm |hot |boiling )?water$/.test(k)))continue;
-    const g=map[k]||(map[k]={key:k,name:k[0].toUpperCase()+k.slice(1),aisle:aisleOf(k),vol:0,wt:0,units:{},count:0,ids:[],recipes:[],done:true});
-    g.ids.push(x.id);if(!x.done)g.done=false;if(x.rt&&!g.recipes.includes(x.rt))g.recipes.push(x.rt);
-    if(s.q==null)continue;
-    if(s.unit==='oz'&&LIQ.test(k))g.vol+=s.q*6;else if(VOL[s.unit])g.vol+=s.q*VOL[s.unit];else if(WT[s.unit]){g.wt+=s.q*WT[s.unit];if(s.unit==='lb')g.lb=true}else if(s.unit)g.units[s.unit]=(g.units[s.unit]||0)+s.q;else g.count+=s.q;
+const CANON=[
+ [/pudding|condensed milk/,null],
+ [/garlic powder/,'Garlic powder'],[/onion powder/,'Onion powder'],[/chili powder/,'Chili powder'],
+ [/\b(green onions?|scallions?|spring onions?)\b/,'Scallions'],[/\bred onions?\b/,'Red onion'],[/\bshallots?\b/,'Shallots'],[/\bonions?\b/,'Onions'],
+ [/\bgarlic\b/,'Garlic'],[/smoked paprika/,'Smoked paprika'],[/\bcayenne\b/,'Cayenne'],
+ [/\b(black pepper|ground pepper|peppercorns?)\b|^pepper$/,'Black pepper'],[/\b(kosher |sea |table |fine )?salt\b/,'Salt'],
+ [/brown sugar/,'Brown sugar'],[/powdered sugar|confectioners/,'Powdered sugar'],[/\bsugar\b/,'Sugar'],[/\bflour\b/,'Flour'],
+ [/parmesan|parmigiano/,'Parmesan'],[/pecorino/,'Pecorino'],[/cheddar/,'Cheddar'],[/monterey jack|\bjack cheese/,'Monterey Jack'],[/gruy/,'Gruyère'],[/cream cheese|neufch/,'Cream cheese'],[/sour cream/,'Sour cream'],
+ [/half.and.half/,'Half-and-half'],[/heavy (whipping )?cream|whipping cream|whipped cream|heavy cream/,'Heavy cream'],
+ [/peanut butter/,'Peanut butter'],[/\bbutter\b/,'Butter'],[/\bmilk\b/,'Milk'],[/\begg(s| yolks?| whites?)?\b/,'Eggs'],
+ [/sesame oil/,'Sesame oil'],[/olive oil/,'Olive oil'],[/\b(vegetable|canola|neutral|avocado|frying) oil\b|oil,? for (deep )?frying|^oil$/,'Neutral oil'],
+ [/chicken (broth|stock)/,'Chicken broth'],[/beef (broth|stock)/,'Beef broth'],[/vegetable (broth|stock)/,'Vegetable broth'],
+ [/soy sauce/,'Soy sauce'],[/tomato paste/,'Tomato paste'],[/cherry tomato/,'Cherry tomatoes'],[/\btomato(es)?\b/,'Tomatoes'],
+ [/chicken breasts?/,'Chicken breasts'],[/chicken thighs?/,'Chicken thighs'],[/\bcarrots?\b/,'Carrots'],[/\bcelery\b(?! seed)/,'Celery'],
+ [/\blemons?\b/,'Lemons',9],[/\blimes?\b/,'Limes',6],[/\bginger\b/,'Ginger'],[/cilantro/,'Cilantro'],[/parsley/,'Parsley'],[/jalape/,'Jalapeños'],[/bay lea/,'Bay leaves'],
+ [/rice vinegar/,'Rice vinegar'],[/\brice\b/,'Rice'],[/\bcumin\b/,'Cumin'],[/\boregano\b/,'Oregano'],[/\bground cloves?\b/,'Ground cloves'],[/\bthyme\b/,'Thyme'],[/\bcorn\b(?!starch)/,'Corn'],[/\bpeas\b|\bpea\b/,'Peas'],
+ [/panko/,'Panko'],[/dijon/,'Dijon mustard'],[/\bhoney\b/,'Honey'],[/maple syrup/,'Maple syrup'],[/worcestershire/,'Worcestershire sauce'],[/apple cider vinegar/,'Apple cider vinegar'],[/rice vinegar/,'Rice vinegar']
+];
+const MODS=new Set(['ground','dried','yellow','white','sweet','large','small','medium','kosher','sea','extra','virgin','unsalted','salted','whole','fresh','organic','baby','raw','plain','good','quality','store-bought','homemade','ripe','hot','mild']);
+const cap=w=>w?w[0].toUpperCase()+w.slice(1):w;
+function canon(name){for(const[re,disp,juice]of CANON)if(re.test(name))return disp?{key:disp.toLowerCase(),name:disp,juice:juice||0}:null;return null}
+function itemParts(t){
+  const s=splitItem(t),raw=String(t).toLowerCase();
+  // "salt and pepper", "cilantro and lime wedges": unquantified pairs become separate items
+  if(s.q==null&&/ and /.test(s.key)&&!/half.and.half/.test(s.key)){
+    const bits=s.key.split(/\s*(?:,|\band\b)\s*/).map(b=>b.trim()).filter(Boolean);
+    if(bits.length>1&&bits.every(b=>b.split(' ').length<=3))return bits.map(b=>{const c=canon(b)||canon(singular(b.replace(/\b(wedges?|slices?|chopped)\b/g,'').trim()));return{q:null,unit:'',key:c?c.key:singular(b),name:c?c.name:cap(b)}});
   }
-  const by={};Object.values(map).forEach(g=>{g.amt=amountText(g);(by[g.aisle]=by[g.aisle]||[]).push(g)});
+  const c=canon(s.key);
+  if(c&&c.juice&&/juice/.test(raw)&&VOL[s.unit]&&s.q!=null)return[{q:s.q*VOL[s.unit]/c.juice,unit:'',key:c.key,name:c.name}];
+  return[{...s,key:c?c.key:s.key,name:c?c.name:cap(s.label||s.key)}];
+}
+function shopGroups(){
+  let map={};
+  for(const x of SHOP.items||[]){
+    for(const s of itemParts(x.t)){
+      const k=s.key;if(!k||(x.r&&/^(cold |warm |hot |boiling )?water$/.test(k)))continue;
+      const g=map[k]||(map[k]={key:k,name:s.name||k[0].toUpperCase()+k.slice(1),aisle:(s.unit==='can'||s.unit==='jar')?'Canned & Jarred':aisleOf(((s.label||'')+' '+k).trim()),vol:0,wt:0,units:{},count:0,ids:[],recipes:[],done:true});
+      if(!g.ids.includes(x.id))g.ids.push(x.id);if(!x.done)g.done=false;if(x.rt&&!g.recipes.includes(x.rt))g.recipes.push(x.rt);
+      if(s.q==null)continue;
+      if(s.unit==='oz'&&LIQ.test(k))g.vol+=s.q*6;else if(VOL[s.unit])g.vol+=s.q*VOL[s.unit];else if(WT[s.unit]){g.wt+=s.q*WT[s.unit];if(s.unit==='lb')g.lb=true}else if(s.unit)g.units[s.unit]=(g.units[s.unit]||0)+s.q;else g.count+=s.q;
+    }
+  }
+  // merge leftovers that differ only by a describing word ("yellow squash" stays, "large shrimp" joins "shrimp")
+  const keys=Object.keys(map).sort((a,b)=>a.length-b.length);
+  for(const k of keys){if(!map[k])continue;const kt=k.split(' ');
+    for(const o of keys){if(o===k||!map[o]||o.length<=k.length)continue;const ot=o.split(' ');
+      if(kt.every(w=>ot.includes(w))&&ot.filter(w=>!kt.includes(w)).every(w=>MODS.has(w))){
+        const a=map[k],b=map[o];a.vol+=b.vol;a.wt+=b.wt;a.lb=a.lb||b.lb;a.count+=b.count;for(const[u,n]of Object.entries(b.units))a.units[u]=(a.units[u]||0)+n;
+        b.ids.forEach(i=>{if(!a.ids.includes(i))a.ids.push(i)});b.recipes.forEach(r=>{if(!a.recipes.includes(r))a.recipes.push(r)});a.done=a.done&&b.done;delete map[o];
+      }}}
+  const by={};Object.values(map).forEach(g=>{if(g.aisle==='Produce'&&g.count)g.count=Math.ceil(g.count-0.01);g.amt=amountText(g);(by[g.aisle]=by[g.aisle]||[]).push(g)});
   return AISLE_ORDER.filter(a=>by[a]).map(a=>[a,by[a].sort((x,y)=>(x.done-y.done)||x.name.localeCompare(y.name))]);
 }
 function shopView(){
