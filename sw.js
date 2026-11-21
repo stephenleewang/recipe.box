@@ -1,5 +1,5 @@
 // Keeps the app working offline. Bump VERSION whenever you change index.html.
-const VERSION = 'recipe-box-v5';
+const VERSION = 'recipe-box-v6';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
