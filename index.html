@@ -414,8 +414,7 @@ function drawAdd(msg){
   ${t==='link'?`<form id="iform"><label class="fld"><span>Recipe link</span><input type="url" id="iu" placeholder="https://…" inputmode="url" autocomplete="off" value="${esc(imp.url||'')}"><small>Works with most recipe sites. If a site blocks it, use Paste.</small></label></form>`:''}
   ${t==='paste'?`<label class="fld"><span>Paste the recipe</span><textarea id="it" style="min-height:180px" placeholder="Paste here after tapping your Copy recipe bookmark, or paste the recipe text itself."></textarea></label>
    <p class="note">Fastest way: on the recipe page in Safari, tap your <b>Copy recipe</b> bookmark, then paste here. <button class="btn b-ghost" style="height:36px;margin-top:6px" data-act="bm">Set up the bookmark</button></p>`:''}
-  ${t==='type'?'<p class="note">Start with a blank card and fill in what you know.</p>':''}
-  <div class="sbar"><button class="btn b-ghost" data-act="close">Cancel</button>${t==='type'?'<button class="btn b-main" data-act="blank">Start</button>':`<button class="btn b-main" id="go">${t==='paste'?'Add':'Import'}</button>`}</div>`);
+  <div class="sbar"><button class="btn b-ghost" data-act="close">Cancel</button><button class="btn b-main" id="go">${t==='paste'?'Add':'Import'}</button></div>`);
   const g=$('#go');if(!g)return;
   g.onclick=t==='paste'?doPaste:doImport;
   const f=$('#iform');if(f)f.onsubmit=e=>{e.preventDefault();doImport()};
@@ -579,7 +578,7 @@ function cookRender(){
 document.addEventListener('click',e=>{
   const t=e.target.closest('[data-act],[data-step],[data-sv],[data-ph],[data-dl],[data-tab],[data-add],[data-sx],[data-sxk],[data-rate]');if(!t)return;
   const a=t.dataset.act,r=R[cur];
-  if(t.dataset.tab){imp.tab=t.dataset.tab;drawAdd();return}
+  if(t.dataset.tab){if(t.dataset.tab==='type'){close();return editor({},false)}imp.tab=t.dataset.tab;drawAdd();return}
   if(a==='close')return close();
   if(t.dataset.sxk){const ids=idsFor(t.dataset.sxk);SHOP.items=(SHOP.items||[]).filter(x=>!ids.includes(x.id));saveShop();shopView();return}
   if(t.dataset.sx){SHOP.items=(SHOP.items||[]).filter(x=>x.id!==t.dataset.sx);saveShop();shopView();return}
