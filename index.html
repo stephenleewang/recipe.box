@@ -563,11 +563,11 @@ function cookRender(){
   const used=(r.ings||[]).filter(i=>!i.h).filter(i=>{const w=i.t.toLowerCase().replace(/\(.*?\)/g,'').split(/[\s,]+/).filter(x=>x.length>3&&!/^(cups?|tbsp|tsp|tablespoons?|teaspoons?|ounces?|pounds?|grams?|large|small|medium|fresh|chopped|minced|sliced|diced|finely|ground)$/.test(x));return w.some(x=>words.includes(x.replace(/s$/,'')))});
   $('#cook').innerHTML=`<div class="ctop"><button class="cbtn" id="cx" aria-label="Close">✕</button><b>${esc(r.title)}</b><button class="cbtn" id="ci">Ingredients</button></div>
   <div class="prog">${st.map((_,j)=>`<button class="${j<=cookI?'on':''}" data-go="${j}" aria-label="Step ${j+1}"></button>`).join('')}</div>
-  <div class="ccard" id="cc"><div class="n">Step ${cookI+1} of ${n}</div><p>${esc(s)}</p>${used.length?`<div class="used">Uses: ${used.map(i=>esc((i.q!=null?qty(i,k)+' ':'')+i.t)).join(' · ')}</div>`:''}<div class="hint">Tap the card for the next step</div></div>
+  <div class="ccard" id="cc"><div class="n">Step ${cookI+1} of ${n}</div><p>${esc(s)}</p>${used.length?`<div class="used">Uses: ${used.map(i=>esc((i.q!=null?qty(i,k)+' ':'')+i.t)).join(' · ')}</div>`:''}<div class="hint">${cookI?'Tap left to go back · tap right for next':'Tap right for the next step'}</div></div>
   <div class="cnav"><button class="pv" id="cp" ${cookI?'':'disabled style="opacity:.4"'}>Back</button><button class="nx" id="cn">${cookI<n-1?'Next step':'Done'}</button></div>
   <div class="cing" id="cig"><h2 style="font-size:24px;margin-bottom:8px">Ingredients${base&&serv!==base?' <small style="font:500 14px Instrument Sans">for '+fmt(serv)+'</small>':''}</h2><ul class="ings">${(r.ings||[]).map((i,j)=>i.h?`<li class="hd">${esc(i.t)}</li>`:`<li><label><input type="checkbox" data-ck="${j}" ${checked.has(j)?'checked':''}><span>${i.q!=null?`<span class="q">${esc(qty(i,k))}</span> `:''}${esc(i.t)}</span></label></li>`).join('')}</ul><button class="btn b-main" style="width:100%;margin-top:14px" id="cic">Back to step</button></div>`;
   const next=()=>{if(cookI<n-1){cookI++;cookRender()}else{cookClose();logSheet(true)}};
-  $('#cx').onclick=cookClose;$('#cn').onclick=next;$('#cc').onclick=next;
+  $('#cx').onclick=cookClose;$('#cn').onclick=next;$('#cc').onclick=e=>{const b=$('#cc').getBoundingClientRect();if(e.clientX<b.left+b.width*0.4){if(cookI>0){cookI--;cookRender()}}else next()};
   $('#cp').onclick=()=>{if(cookI>0){cookI--;cookRender()}};
   $('#ci').onclick=()=>$('#cig').classList.add('on');$('#cic').onclick=()=>$('#cig').classList.remove('on');
   $('#cook').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{cookI=+b.dataset.go;cookRender()});
